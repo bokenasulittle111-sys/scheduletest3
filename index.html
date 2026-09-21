@@ -548,6 +548,42 @@
       <p class="subtitle">大学の履修登録を簡単に管理。あなたのペースで学習計画を立てましょう。</p>
     </header>
 
+    <!-- 新しいUI：学年と学期を選択 -->
+    <div class="card" style="margin-bottom: 30px;">
+      <h2>学年と学期を選択</h2>
+      <div class="form-group">
+        <label for="gradeSelect">学年</label>
+        <select id="gradeSelect" onchange="onGradeOrSemesterChange()">
+          <option value="">選択してください</option>
+          <option value="1">1年生</option>
+          <option value="2">2年生</option>
+          <option value="3">3年生</option>
+          <option value="4">4年生</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="semesterSelect">学期</label>
+        <select id="semesterSelect" onchange="onGradeOrSemesterChange()">
+          <option value="">選択してください</option>
+          <option value="1">前期</option>
+          <option value="2">後期</option>
+        </select>
+      </div>
+      <button type="button" class="btn btn-primary" onclick="confirmScheduleSettings()">設定</button>
+    </div>
+
+    <!-- 選択された必修科目表示 -->
+    <div class="card" id="selectedCoursesSection" style="display: none; margin-bottom: 30px;">
+      <h3>選択された必修科目</h3>
+      <div id="selectedCoursesList" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px;"></div>
+    </div>
+
+    <!-- 選択必修科目を選ぶ -->
+    <div class="card" id="selectiveRequiredSection" style="display: none; margin-bottom: 30px;">
+      <h3>選択必修科目を選択</h3>
+      <div id="selectiveRequiredContainer"></div>
+    </div>
+
     <div class="main-content">
       <div>
         <div class="schedule-wrapper">
@@ -650,8 +686,6 @@
           </ul>
         </div>
 
-        <button class="btn btn-primary" onclick="openGradeSelectModal()">学年学期を選択</button>
-        <button class="btn btn-primary" style="margin-top: 10px;" onclick="openSelectiveRequiredOnlyModal()">選択必修を選ぶ</button>
         <button class="btn btn-primary" style="margin-top: 10px;" onclick="openManualAddModal()">+ 科目を追加</button>
         <button class="btn btn-secondary" style="margin-top: 10px;" onclick="clearSchedule()">リセット</button>
       </aside>
@@ -821,6 +855,22 @@
           <button type="submit" class="btn btn-primary btn-sm">追加</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- チェックリスト -->
+  <div class="card" id="checklistSection" style="display: none; margin-bottom: 30px;">
+    <h3>✅ 完了チェックリスト</h3>
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      <label style="display: flex; align-items: center; cursor: pointer;">
+        <input type="checkbox" id="checklistRequired" disabled> 必修科目を配置
+      </label>
+      <label style="display: flex; align-items: center; cursor: pointer;">
+        <input type="checkbox" id="checklistElective" onchange="updateSelectiveRequiredStatus()"> 選択必修科目を選択
+      </label>
+      <label style="display: flex; align-items: center; cursor: pointer;">
+        <input type="checkbox" id="checklistManual" disabled> 手動で科目を追加
+      </label>
     </div>
   </div>
 
@@ -1259,41 +1309,57 @@
     }
 
     function onGradeOrSemesterChange() {
-      const grade = document.getElementById('selectGrade').value;
-      const semester = document.getElementById('selectSemester').value;
+      const grade = document.getElementById('gradeSelect').value;
+      const semester = document.getElementById('semesterSelect').value;
 
       if (!grade || !semester) {
-        document.getElementById('selectiveRequiredStep').style.display = 'none';
+        document.getElementById('selectedCoursesSection').style.display = 'none';
+        document.getElementById('selectiveRequiredSection').style.display = 'none';
         return;
       }
 
-      // 「学年学期を選択」の場合は選択必修ステップを表示しない
-      if (!isSelectiveRequiredOnly) {
-        document.getElementById('selectiveRequiredStep').style.display = 'none';
-        return;
-      }
+      // 必修科目を取得
+      const curriculumKey = `${grade}_${semester}`;
+      const requiredCourses = CURRICULUM[curriculumKey] || [];
 
-      // ここから先は「選択必修を選びなおす」の場合のみ実行
-      let selectiveGroupsForGradeSemester = [];
+      // 必修科目を表示
+      const selectedCoursesList = document.getElementById('selectedCoursesList');
+      selectedCoursesList.innerHTML = '';
+      requiredCourses.forEach(course => {
+        const badge = document.createElement('div');
+        badge.style.cssText = 'background: var(--color-primary); color: white; padding: 8px 12px; border-radius: 6px; font-size: 12px; text-align: center;';
+        badge.textContent = `${course.name} (${course.periods ? course.periods.length : 1}コマ)`;
+        selectedCoursesList.appendChild(badge);
+      });
+      document.getElementById('selectedCoursesSection').style.display = 'block';
+
+      // 選択必修科目グループを取得
+      const selectiveGroups = [];
       for (let groupId in ELECTIVE_REQUIRED_GROUPS) {
         const group = ELECTIVE_REQUIRED_GROUPS[groupId];
         if (group.grade.includes(parseInt(grade)) && group.semester.includes(parseInt(semester))) {
-          selectiveGroupsForGradeSemester.push({ id: groupId, ...group });
+          selectiveGroups.push({ id: groupId, ...group });
         }
       }
 
-      if (selectiveGroupsForGradeSemester.length === 0) {
-        document.getElementById('selectiveRequiredStep').style.display = 'none';
+      if (selectiveGroups.length === 0) {
+        document.getElementById('selectiveRequiredSection').style.display = 'none';
+        document.getElementById('checklistSection').style.display = 'block';
+        document.getElementById('checklistRequired').checked = true;
+        document.getElementById('checklistElective').disabled = true;
         return;
       }
 
+      // 選択必修科目セクションを表示
       selectedSelectiveRequired = {};
-      const container = document.getElementById('gradeSelectiveRequiredList');
+      const container = document.getElementById('selectiveRequiredContainer');
       container.innerHTML = '';
 
-      selectiveGroupsForGradeSemester.forEach((group, groupIndex) => {
+      selectiveGroups.forEach((group, groupIndex) => {
         const groupDiv = document.createElement('div');
         groupDiv.style.marginBottom = '15px';
+        groupDiv.style.paddingBottom = '15px';
+        groupDiv.style.borderBottom = '1px solid var(--color-border)';
 
         const groupTitle = document.createElement('h4');
         groupTitle.textContent = group.name;
@@ -1317,7 +1383,7 @@
           radio.style.marginRight = '8px';
           radio.onchange = () => {
             selectedSelectiveRequired[group.id] = { code: course.code, name: course.name };
-            updateGradeSelectiveRequiredCounter(selectiveGroupsForGradeSemester.length);
+            updateSelectiveRequiredStatus();
           };
 
           const span = document.createElement('span');
@@ -1339,21 +1405,35 @@
         skipButton.onclick = () => {
           delete selectedSelectiveRequired[group.id];
           document.querySelectorAll(`input[name="group_${groupIndex}"]`).forEach(r => r.checked = false);
-          updateGradeSelectiveRequiredCounter(selectiveGroupsForGradeSemester.length);
+          updateSelectiveRequiredStatus();
         };
         groupDiv.appendChild(skipButton);
 
         container.appendChild(groupDiv);
       });
 
-      document.getElementById('gradeSelectiveRequiredDesc').textContent = `${selectiveGroupsForGradeSemester.length}つのグループから、各1科目選択してください（スキップ可能）`;
-      updateGradeSelectiveRequiredCounter(selectiveGroupsForGradeSemester.length);
-      document.getElementById('selectiveRequiredStep').style.display = 'block';
+      document.getElementById('selectiveRequiredSection').style.display = 'block';
+      document.getElementById('checklistSection').style.display = 'block';
+      document.getElementById('checklistRequired').checked = true;
+      document.getElementById('checklistElective').disabled = false;
+      updateSelectiveRequiredStatus();
     }
 
-    function updateGradeSelectiveRequiredCounter(total) {
-      const selected = Object.keys(selectedSelectiveRequired).length;
-      document.getElementById('gradeSelectiveRequiredCounter').textContent = `${selected}/${total}`;
+    function updateSelectiveRequiredStatus() {
+      const checkboxes = document.querySelectorAll('#selectiveRequiredContainer input[type="radio"]:checked');
+      document.getElementById('checklistElective').checked = checkboxes.length > 0;
+    }
+
+    function confirmScheduleSettings() {
+      const grade = document.getElementById('gradeSelect').value;
+      const semester = document.getElementById('semesterSelect').value;
+
+      if (!grade || !semester) {
+        alert('学年と学期を選択してください');
+        return;
+      }
+
+      handleGradeSelect({ preventDefault: () => {}, targetGrade: grade, targetSemester: semester });
     }
 
     function confirmGradeAndSelectiveRequired() {
